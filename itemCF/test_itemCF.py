@@ -1,9 +1,4 @@
 # encoding=utf8
-"""
-    启动方式
-    spark test.py
-    or /opt/meituan/spark-1.4/bin/spark-submit test.py
-"""
 
 #########################################
 # 运行依赖
@@ -25,8 +20,8 @@ global APP_NAME
 # PY_FILES: 运行依赖的.py .egg .zip .ZIP
 #########################################
 
-APP_NAME = 'pyspark_unittest_demo'
-OWNER = 'qinsiyuan'
+APP_NAME = 'test_itemCF'
+OWNER = 'lijiazhen'
 PY_FILES = []
 
 
@@ -45,11 +40,6 @@ class test(unittest.TestCase):
     def tearDown(self):
         sc.stop()
         pass
-
-    def testSparkDataframe(self):
-        lines = hc.sql('select deal_name from mart_traffic.apideal limit 2')
-        self.assertEqual(len(lines.take(10)), 2)
-
 
 #########################################
 # 初始化
