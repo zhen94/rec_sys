@@ -53,12 +53,11 @@ PY_FILES = [
 # hc: 默认全局变量, HiveContext
 ########################################
 
+input_path = ../poj_data/paser_loger/data
+
 def main():
-    def test_func(_):
-        from medusalib.city_info.city_info_sogou import city_name
-        return city_name.keys()[0]
-    lines = sc.parallelize(range(0, 10)).map(test_func)
-    print lines.take(10)
+    data = open(input_path).read()
+
 
 
 #########################################
