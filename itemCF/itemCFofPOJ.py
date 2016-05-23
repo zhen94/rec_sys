@@ -35,14 +35,12 @@ SPARK_CONF = {
     'spark.yarn.executor.memoryOverhead': '4096',
     'spark.sql.inMemoryStorage.compressed': 'true',
     'spark.core.connection.ack.wait.timeout': '100',
-    'spark.driver.maxResultSize': '1096',
 }
 YARN_CONF = {
     'num-executors': '25', 
-    'executor-cores': '2',
+    'executor-cores': '4',
     'master': 'yarn-client',
     'executor-memory': '8g',
-    'driver-memory': '4g',
     'conf': 'spark.ui.port=0',
     'queue': 'root.hadoop-traffic.test01',
 }
@@ -57,70 +55,110 @@ PY_FILES = [
 # hc: 默认全局变量, HiveContext
 ########################################
 
-def mapper(line):
-    result = dict()
-    #limit = max(line['items']) + 1
-    result['rank'] = dict()
-    result['prob_ucnt'] = dict()
+def rank_flat(line):
+    result = list()
     if len(line['items']) < 2:
         return result
-    score = 1 / (math.log(1 + len(line['items']), 2))
+    score = 1 / (math.log(1 + len(line['items']) * 1.0))
     for i in range(0, len(line['items'])):
         x = line['items'][i]
         if x > 10000:
             continue
-        result['prob_ucnt'][x] = 1
         for j in range(0, i):
             y = line['items'][j]
             if y > 10000:
                 continue
-            result['rank'][(min(x, y), max(x, y))] = score
+            result.append(((min(x, y), max(x, y)), score))
     return result
 
-def reducer(line_a, line_b):
-    for k, v in line_b['rank'].items():
-        if k in line_a['rank']:
-            line_a['rank'][k] += v
-        else:
-            line_a['rank'][k] = v
-    for k, v in line_b['prob_ucnt'].items():
-        if k in line_a['prob_ucnt']:
-            line_a['prob_ucnt'][k] += v
-        else:
-            line_a['prob_ucnt'][k] = v
-    return line_a
+def ucnt_flat(line):
+    result = list()
+    if len(line['items']) < 2:
+        return result
+    for _ in line['items']:
+        result.append((_, 1))
+    return result
+
+#def reducer(line_a, line_b):
+#    if len(line_a['rank']) < len(line_b['rank']):
+#        line_a, line_b = line_b, line_a
+#    for i in range(0, len(line_b['rank'])):
+#        line_a['prob_ucnt'][i] += line_b['prob_ucnt'][i]
+#        for j in range(0, len(line_b['rank'])):
+#            line_a['rank'][i][j] += line_b['rank'][i][j]
+#    return line_a
 
 def main():
-        input_path = 'lijiazhen/tmp/poj_data'
-        poj_ac_record = sc.textFile(input_path).map(eval).repartition(1000)
-        item2item_rank = poj_ac_record.map(mapper)
-        item2item_rank.cache()
-        item2item_rank = item2item_rank.reduce(reducer)
-        data = str(item2item_rank)
-        fp = open('./result', 'wb+')
-        fp.write(data)
+    pass
 
 def test():
     def process_map():
+        #input_path = '../poj_data/paser_loger/data'
+        #data = open(input_path, 'rb').read().split('\n')
+        #data = map(json.loads, data)
+        #data = sc.parallelize(data).repartition(50)
         input_path = 'lijiazhen/tmp/poj_data'
-        poj_ac_record = sc.textFile(input_path).map(eval).repartition(200)
-        poj_ac_record = poj_ac_record.filter(lambda _: len(_['items']) < 1000 and len(_['items']) > 1)
-        item2item_rank = poj_ac_record.map(mapper)
+        data = sc.textFile(input_path).map(eval).repartition(200)
+        data = data.flatMap(rank_flat)
+        data = data.repartition(100)
         from bftlib.hadoop import Hadoop
         h = Hadoop()
         h.rmr('lijiazhen/tmp/poj_itemCF')
-        item2item_rank.saveAsTextFile('lijiazhen/tmp/poj_itemCF')
+        data.saveAsTextFile('lijiazhen/tmp/poj_itemCF')
 
-    def process_reducer():
+    def process_reduce():
+        from random import randint
+        from operator import add
         input_path = 'lijiazhen/tmp/poj_itemCF'
-        poj_ac_record = sc.textFile(input_path).map(eval).repartition(200)
-        item2item_rank = poj_ac_record.reduce(reducer)
-        data = str(item2item_rank)
-        fp = open('./result', 'wb+')
-        fp.write(data)
+        item2item = sc.textFile(input_path).map(eval).repartition(200)
+        item2item = item2item.map(lambda _: ((_[0], randint(1, 100)), _[1]))
+        item2item = item2item.reduceByKey(add)
+        item2item = item2item.map(lambda _: (_[0][0], _[1]))
+        item2item = item2item.reduceByKey(add)
+        from bftlib.hadoop import Hadoop
+        h = Hadoop()
+        h.rmr('lijiazhen/tmp/poj_itemCF_res')
+        item2item.coalesce(100).saveAsTextFile('lijiazhen/tmp/poj_itemCF_res')
+
+    def get_ucnt():
+        from operator import add
+        input_path = 'lijiazhen/tmp/poj_data'
+        data = sc.textFile(input_path).map(eval).repartition(200)
+        data = data.flatMap(ucnt_flat)
+        data = data.reduceByKey(add).collect()
+        result = dict()
+        for _ in data:
+            result[_[0]] = _[1]
+        return result
+        #from bftlib.hadoop import Hadoop
+        #h = Hadoop()
+        #h.rmr('lijiazhen/tmp/poj_prob_ucnt')
+        #data.saveAsTextFile('lijiazhen/tmp/poj_prob_ucnt')
+
+    def test_result():
+        rank_path = 'lijiazhen/tmp/poj_itemCF_res'
+        ucnt_path = 'lijiazhen/tmp/poj_prob_ucnt'
+        rank = sc.textFile(rank_path).map(eval)
+        #ucnt = sc.textFile(ucnt_path).map(eval).collect()
+        ucnt = get_ucnt()
+        ucnt = sc.broadcast(ucnt)
+        rank = rank.map(
+                lambda _: {'p1': _[0][0], 'p2': _[0][1], 'score': _[1] / (ucnt.value[_[0][0]] * ucnt.value[_[0][1]])}
+        )
+        #rank = rank.keyBy(lambda _: _[0][0]).join(ucnt.value)
+        #rank = rank.map(lambda _: (_[1][0][0], _[1][0][1] / _[1][1]))
+        #rank = rank.keyBy(lambda _: _[0][1]).join(ucnt.value)
+        #rank = rank.map(lambda _: (_[1][0][0], _[1][0][1] / _[1][1]))
+        from bftlib.hadoop import Hadoop
+        h = Hadoop()
+        h.rmr('lijiazhen/tmp/poj_itemCF_rank')
+        rank.saveAsTextFile('lijiazhen/tmp/poj_itemCF_rank')
 
     #process_map()
-    process_reducer()
+    #process_reduce()
+    #get_ucnt()
+    test_result()
+
 
 
 #########################################
