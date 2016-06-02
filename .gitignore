@@ -1,0 +1,15 @@
+# Python:
+*.py[cod]
+*.so
+*.egg
+*.egg-info
+dist
+build
+
+#vim
+*.sw[mnop]
+.gitignore
+
+# My configurations:
+tmp*
+*.tmp
