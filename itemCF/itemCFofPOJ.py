@@ -62,7 +62,7 @@ def rank_flat(line):
     score = 1 / (math.log(1 + len(line['items']) * 1.0))
     for i in range(0, len(line['items'])):
         x = line['items'][i]
-        if x > 10000:
+        if x >= 10000 or x < 1000:
             continue
         for j in range(0, i):
             y = line['items'][j]
@@ -143,7 +143,7 @@ def test():
         ucnt = get_ucnt()
         ucnt = sc.broadcast(ucnt)
         rank = rank.map(
-                lambda _: {'p1': _[0][0], 'p2': _[0][1], 'score': _[1] / (ucnt.value[_[0][0]] * ucnt.value[_[0][1]])}
+                lambda _: {'p1': _[0][0], 'p2': _[0][1], 'score': _[1] / math.sqrt(ucnt.value[_[0][0]] * ucnt.value[_[0][1]])}
         )
         #rank = rank.keyBy(lambda _: _[0][0]).join(ucnt.value)
         #rank = rank.map(lambda _: (_[1][0][0], _[1][0][1] / _[1][1]))
